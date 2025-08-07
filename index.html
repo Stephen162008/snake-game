@@ -1,50 +1,647 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Snake Game</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Snake — Revive with Coin (Invincible Blink)</title>
+<style>
+  :root{
+    --bg:#000; --board:#181818; --border:#fff; --snake-head:#00ff00;
+    --snake-body:#0a7a0a; --text:#fff; --muted:#9a9a9a; --accent:#ffb84d;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:Arial, sans-serif; -webkit-user-select:none;user-select:none;}
+  .center{height:100%;display:flex;align-items:center;justify-content:center;}
+  .card{width:540px;text-align:center;position:relative;touch-action:manipulation;}
+  canvas{background:var(--board);border:3px solid var(--border);display:block;margin:0 auto;image-rendering:pixelated;touch-action:none;}
+  .hud{display:flex;justify-content:space-between;align-items:center;margin:10px 0;}
+  .hud-left{display:flex;gap:12px;align-items:center;}
+  .hud-right{display:flex;gap:12px;align-items:center;}
+  .score{font-size:18px;}
+  .high{font-size:14px;color:var(--muted);}
+  .coins{font-size:16px;color:#ffd24d;font-weight:700;}
+  .credits{font-size:15px;color:#9fe0ff;font-weight:600;}
+  button{background:#222;color:var(--text);border:1px solid #666;padding:6px 12px;cursor:pointer;border-radius:6px;}
+  button:hover{border-color:#aaa} button:disabled{opacity:0.45;cursor:not-allowed}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);z-index:30;}
+  .panel{background:#0e0e0e;border:2px solid #e6e6e6;padding:18px;width:460px;text-align:center;border-radius:8px;}
+  .panel h1{margin:0 0 8px;font-size:20px}
+  .panel p{color:var(--muted);margin:8px 0;}
+  .panel .big{font-size:24px;font-weight:700;margin:10px 0;}
+  .panel .row{display:flex;gap:10px;justify-content:center;margin-top:12px;}
+  .store-list{display:flex;flex-direction:column;gap:8px;align-items:center;margin-top:10px}
+  .small{font-size:13px;color:var(--muted);margin-top:8px;}
+  .top-scores{background:#111;padding:8px;border-radius:6px;border:1px solid #222;margin-top:8px;text-align:left;max-height:120px;overflow:auto;}
+  .meta{font-size:12px;color:var(--muted);margin-top:6px}
+  .daily {margin-top:10px;color:#9fe0ff;font-size:13px}
+  .notice {margin-top:8px;color:#7ff3a8;font-size:13px}
+</style>
 </head>
 <body>
-  <div id="mainMenu">
-    <h1>Snake Game</h1>
-    <p>High Score: <span id="highScore">0</span></p>
-    <p>Coins: <span id="coinCount">0</span></p>
-    <button id="playBtn">Play</button>
-    <button id="storeBtn">Store</button>
-    <div id="storeMenu" class="hidden">
-      <p>Buy 1 Coin = 10 Score</p>
-      <button id="buyCoinBtn">Buy Coin</button>
-      <button id="closeStoreBtn">Close Store</button>
-    </div>
-    <div id="howToPlay">
-      <h3>How to Play</h3>
-      <ul>
-        <li>Eat food to grow the snake</li>
-        <li>Get 1 coin every 10 points</li>
-        <li>Use coins to revive after game over</li>
-        <li>Touch arrows to move on mobile</li>
-      </ul>
+  <div class="center">
+    <div class="card">
+      <div class="hud">
+        <div class="hud-left">
+          <div class="score">Score: <span id="score">0</span></div>
+        </div>
+
+        <div class="hud-right">
+          <div class="high">High</div>
+          <div id="topScoresPreview" style="font-size:13px;color:var(--muted);margin-right:8px">-</div>
+          <div class="coins">Coins: <span id="coins">0</span></div>
+          <div class="credits">Credits: <span id="credits">0</span></div>
+          <button id="storeBtn">Store</button>
+        </div>
+      </div>
+
+      <canvas id="game" width="400" height="400" aria-label="Snake game"></canvas>
+
+      <div style="text-align:center;color:var(--muted);font-size:12px;margin-top:8px;">
+        Use Arrow keys or WASD to move. Swipe on mobile to control. Click Play once to unlock sound if the browser blocks autoplay.
+      </div>
+
+      <!-- Start Overlay / Main Menu -->
+      <div id="startOverlay" class="overlay">
+        <div class="panel">
+          <h1>Snake & Food</h1>
+          <div class="big">Play Game</div>
+          <p>Your coins persist. Earn 1 coin per 10 score while playing.</p>
+
+          <div class="row">
+            <button id="playBtn">Play</button>
+            <button id="openStoreFromMenu">Store</button>
+          </div>
+
+          <div style="margin-top:12px;text-align:left">
+            <strong>Top Scores:</strong>
+            <div class="top-scores" id="topScoresBox"></div>
+
+            <div class="daily">
+              <div>Daily Login Bonus (auto-claimed on open)</div>
+              <div id="dailyInfo" style="margin-top:6px;color:#9fe0ff">Checking...</div>
+            </div>
+
+            <div class="notice" id="dailyNotice" style="display:none;"></div>
+
+            <div class="meta">Tip: Daily bonus auto-claims once per day. Consecutive days increase streak (up to +4 extra).</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Game Over Screen -->
+      <div id="overOverlay" class="overlay" style="display:none;">
+        <div class="panel">
+          <h1>Game Over</h1>
+          <div>Score</div>
+          <div class="big" id="finalScore">0</div>
+          <div>Highest: <strong id="finalTop">0</strong></div>
+          <div class="row">
+            <button id="againBtn">Play Again</button>
+            <button id="menuBtn">Main Menu</button>
+          </div>
+          <div style="margin-top:10px">
+            <button id="useCoinContinue" style="background:#2b2; color:#002" disabled>Use 1 Coin to Continue (Resume)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STORE Overlay -->
+      <div id="storeOverlay" class="overlay" style="display:none;">
+        <div class="panel">
+          <h1>Store</h1>
+          <p>Two ways to get coins: buy with persistent credits (menu) or buy with in-game score.</p>
+          <div class="store-list">
+            <div>
+              <button id="buyCoinWithCreditBtn">Buy 1 Coin (cost: 1 credit)</button>
+              <div class="meta">Buy coins anytime — credits persist in your browser.</div>
+            </div>
+
+            <div>
+              <button id="buyCoinWithScoreBtn">Buy 1 Coin (cost: 10 score) — (when in-game)</button>
+              <div class="meta">This uses your current score during a run.</div>
+            </div>
+
+            <div>
+              <button id="claimCreditsBtn">Claim Credits from Top Score (1 credit per 50 top-score points)</button>
+              <div class="meta" id="claimInfo">Claim credits from your highest recorded score. One-time per milestone.</div>
+            </div>
+
+            <div>
+              <button id="closeStoreBtn">Close</button>
+            </div>
+          </div>
+
+          <div style="margin-top:10px;color:var(--muted);font-size:13px">Credits and coins are saved to your browser storage.</div>
+        </div>
+      </div>
+
     </div>
   </div>
 
-  <canvas id="gameCanvas" width="400" height="400"></canvas>
+<script>
+/* ================= CONFIG & STORAGE KEYS ================= */
+const box = 20;
+const STORAGE_HIGH_KEY = 'snakeHighScores_v1';
+const STORAGE_COINS_KEY = 'snakeCoins_v1';
+const STORAGE_CREDITS_KEY = 'snakeCredits_v1';
+const STORAGE_CLAIMED_KEY = 'snakeClaimedMilestones_v1';
+const STORAGE_TOP_N = 5;
+const STORAGE_DAILY_LAST = 'snakeDaily_last_v1';
+const STORAGE_DAILY_STREAK = 'snakeDaily_streak_v1';
 
-  <!-- Mobile Controls -->
-  <div id="mobileControls">
-    <div class="row">
-      <button id="btnUp">⬆️</button>
-    </div>
-    <div class="row">
-      <button id="btnLeft">⬅️</button>
-      <button id="btnDown">⬇️</button>
-      <button id="btnRight">➡️</button>
-    </div>
-  </div>
+const COIN_SCORE_COST = 10;
+const CREDIT_COST_PER_COIN = 1;
+const CREDIT_MILESTONE = 50;
 
-  <audio id="eatSound" src="eat.mp3" preload="auto"></audio>
+/* ================= Canvas & DOM ================= */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const cols = canvas.width / box;
+const rows = canvas.height / box;
 
-  <script src="game.js"></script>
+const scoreEl = document.getElementById('score');
+const coinsEl = document.getElementById('coins');
+const creditsEl = document.getElementById('credits');
+
+const storeBtn = document.getElementById('storeBtn');
+const storeOverlay = document.getElementById('storeOverlay');
+const buyCoinWithCreditBtn = document.getElementById('buyCoinWithCreditBtn');
+const buyCoinWithScoreBtn = document.getElementById('buyCoinWithScoreBtn');
+const claimCreditsBtn = document.getElementById('claimCreditsBtn');
+const closeStoreBtn = document.getElementById('closeStoreBtn');
+
+const startOverlay = document.getElementById('startOverlay');
+const playBtn = document.getElementById('playBtn');
+const openStoreFromMenuBtn = document.getElementById('openStoreFromMenu');
+const overOverlay = document.getElementById('overOverlay');
+const againBtn = document.getElementById('againBtn');
+const menuBtn = document.getElementById('menuBtn');
+const finalScoreEl = document.getElementById('finalScore');
+const finalTopEl = document.getElementById('finalTop');
+const useCoinContinueBtn = document.getElementById('useCoinContinue');
+const topScoresBox = document.getElementById('topScoresBox');
+const topScoresPreview = document.getElementById('topScoresPreview');
+const dailyInfo = document.getElementById('dailyInfo');
+const dailyNotice = document.getElementById('dailyNotice');
+
+/* ================= Persistent state ================= */
+let coins = parseInt(localStorage.getItem(STORAGE_COINS_KEY) || '0', 10);
+let credits = parseInt(localStorage.getItem(STORAGE_CREDITS_KEY) || '0', 10);
+let claimedMilestones = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_CLAIMED_KEY) || '[]'); } catch(e){ return []; } })();
+let dailyLast = localStorage.getItem(STORAGE_DAILY_LAST) || null; // YYYY-MM-DD string
+let dailyStreak = parseInt(localStorage.getItem(STORAGE_DAILY_STREAK) || '0', 10) || 0;
+
+/* ================= Game runtime state ================= */
+let snake = [];
+let food = null;
+let dir = 'RIGHT';
+let score = 0;
+let prevSnakeState = null;     // preserved when stepping (so we can resume)
+let lastCoinThreshold = 0;
+let stepIntervalMs = 120;
+let stepTimer = null;
+
+/* ---------------- Invincibility state ---------------- */
+let invincible = false;
+let invStart = 0;
+const INV_DURATION = 3000; // 3 seconds
+const BLINK_INTERVAL = 120; // ms blink period
+
+/* ================= Assets & sound ================= */
+let foodImg = new Image();
+foodImg.src = 'food.png';
+let foodImgLoaded = false;
+foodImg.onload = () => { foodImgLoaded = true; render(); };
+
+// WebAudio eat sound (short tone)
+let audioCtx = null;
+function ensureAudio(){ if(!audioCtx){ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } }
+function playEatSound(){
+  ensureAudio();
+  if(!audioCtx) return;
+  if(audioCtx.state === 'suspended'){ audioCtx.resume().catch(()=>{}); }
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(700, now);
+  osc.frequency.exponentialRampToValueAtTime(1100, now + 0.12);
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(now); osc.stop(now + 0.16);
+}
+
+/* ================= Utilities ================= */
+function randInt(max){ return Math.floor(Math.random()*max); }
+function copySnake(s){ return s.map(seg => ({x:seg.x,y:seg.y})); }
+function getTopScores(){ try{ return JSON.parse(localStorage.getItem(STORAGE_HIGH_KEY) || '[]'); } catch(e){ return []; } }
+function saveTopScores(arr){ localStorage.setItem(STORAGE_HIGH_KEY, JSON.stringify(arr)); }
+function saveCoins(){ localStorage.setItem(STORAGE_COINS_KEY, String(coins)); }
+function saveCredits(){ localStorage.setItem(STORAGE_CREDITS_KEY, String(credits)); }
+function saveClaimed(){ localStorage.setItem(STORAGE_CLAIMED_KEY, JSON.stringify(claimedMilestones)); }
+function saveDailyState(){ localStorage.setItem(STORAGE_DAILY_LAST, dailyLast); localStorage.setItem(STORAGE_DAILY_STREAK, String(dailyStreak)); }
+
+/* ---------- Daily auto-claim helpers ---------- */
+function todayLocalISO(){
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+function isDailyClaimedToday(){ return dailyLast === todayLocalISO(); }
+function dailyBonusAmount(){ return 1 + Math.min(dailyStreak, 4); }
+
+function autoClaimDailyIfNeeded(){
+  const today = todayLocalISO();
+  if(isDailyClaimedToday()) return 0;
+  if(dailyLast){
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+    const yiso = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+    if(dailyLast === yiso) dailyStreak = (dailyStreak || 0) + 1;
+    else dailyStreak = 1;
+  } else dailyStreak = 1;
+  dailyLast = today;
+  saveDailyState();
+  const amount = dailyBonusAmount();
+  credits += amount;
+  saveCredits();
+  return amount;
+}
+
+/* ---------- Game placement & init ---------- */
+function placeFood(){
+  let x,y,hit;
+  do{
+    x = randInt(cols) * box;
+    y = randInt(rows) * box;
+    hit = snake.some(s => s.x === x && s.y === y);
+  } while(hit);
+  return {x,y};
+}
+
+function initGame(){
+  const startX = Math.floor(cols/2) * box;
+  const startY = Math.floor(rows/2) * box;
+  snake = [
+    {x:startX, y:startY},
+    {x:startX - box, y:startY},
+    {x:startX - box*2, y:startY}
+  ];
+  dir = 'RIGHT';
+  score = 0;
+  lastCoinThreshold = 0;
+  prevSnakeState = null;
+  stepIntervalMs = 120;
+  invincible = false;
+  food = placeFood();
+  updateAllUI();
+}
+
+/* ---------- Render (blinking while invincible but still visible) ---------- */
+let rafId = null;
+let eatAnim = { active:false, x:0, y:0, start:0, duration:300 };
+
+function render(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const cellPad = 4;
+  const foodSize = box - cellPad * 2;
+  const foodOffset = cellPad;
+
+  if(foodImgLoaded){
+    ctx.drawImage(foodImg, food.x + foodOffset, food.y + foodOffset, foodSize, foodSize);
+  } else {
+    ctx.fillStyle = '#ff2b2b';
+    ctx.fillRect(food.x + foodOffset, food.y + foodOffset, foodSize, foodSize);
+  }
+
+  // compute blink alpha when invincible: vary between 0.35 and 1
+  let snakeAlpha = 1;
+  if(invincible){
+    const elapsed = performance.now() - invStart;
+    const phase = Math.floor(elapsed / BLINK_INTERVAL);
+    snakeAlpha = (phase % 2) === 0 ? 1 : 0.35;
+  }
+
+  // draw snake with alpha
+  ctx.save();
+  ctx.globalAlpha = snakeAlpha;
+  for(let i = 0; i < snake.length; i++){
+    const s = snake[i];
+    ctx.fillStyle = (i === 0) ? '#00ff00' : '#0a7a0a';
+    ctx.fillRect(s.x, s.y, box, box);
+    ctx.strokeStyle = '#000';
+    ctx.strokeRect(s.x, s.y, box, box);
+  }
+  ctx.restore();
+
+  // eat animation (expanding food)
+  if(eatAnim.active){
+    const t = performance.now();
+    const elapsed = t - eatAnim.start;
+    const p = Math.min(1, elapsed / eatAnim.duration);
+    const scale = 1 + 0.6 * (1 - Math.pow(1 - p, 2));
+    const alpha = 1 - p;
+    const size = foodSize * scale;
+    const cx = eatAnim.x + box/2;
+    const cy = eatAnim.y + box/2;
+    const dx = cx - size/2;
+    const dy = cy - size/2;
+
+    ctx.globalAlpha = alpha;
+    if(foodImgLoaded){
+      try { ctx.drawImage(foodImg, dx, dy, size, size); }
+      catch(e){ ctx.fillStyle = '#ff2b2b'; ctx.fillRect(dx, dy, size, size); }
+    } else {
+      ctx.fillStyle = '#ff2b2b';
+      ctx.fillRect(dx, dy, size, size);
+    }
+    ctx.globalAlpha = 1;
+
+    if(p >= 1) eatAnim.active = false;
+  }
+
+  rafId = requestAnimationFrame(render);
+}
+function startRender(){ if(!rafId) rafId = requestAnimationFrame(render); }
+function stopRender(){ if(rafId){ cancelAnimationFrame(rafId); rafId = null; } }
+
+/* ---------- Step logic (skip death while invincible) ---------- */
+function savePrevState(){ prevSnakeState = copySnake(snake); }
+function collisionWithSelf(head){
+  return snake.some(seg => seg.x === head.x && seg.y === head.y);
+}
+function adjustSpeed(){ const faster = Math.max(45, 120 - Math.floor(score / 5) * 8); if(faster !== stepIntervalMs){ stepIntervalMs = faster; if(stepTimer){ clearInterval(stepTimer); stepTimer = setInterval(stepLoop, stepIntervalMs); } } }
+
+function awardCoinsFromScore(){
+  const newThreshold = Math.floor(score / 10);
+  const earned = newThreshold - lastCoinThreshold;
+  if(earned > 0){
+    coins += earned;
+    saveCoins();
+    lastCoinThreshold = newThreshold;
+    updateCoinsUI();
+  }
+}
+
+function clampHead(head){
+  // clamp head coordinates inside canvas to avoid leaving screen during invincibility
+  head.x = Math.max(0, Math.min(head.x, canvas.width - box));
+  head.y = Math.max(0, Math.min(head.y, canvas.height - box));
+  return head;
+}
+
+function stepLoop(){
+  // if invincibility expired, clear it
+  if(invincible){
+    if(performance.now() - invStart >= INV_DURATION){
+      invincible = false;
+    }
+  }
+
+  savePrevState();
+
+  let headX = snake[0].x;
+  let headY = snake[0].y;
+  if(dir === 'LEFT') headX -= box;
+  if(dir === 'RIGHT') headX += box;
+  if(dir === 'UP') headY -= box;
+  if(dir === 'DOWN') headY += box;
+
+  const newHead = { x: headX, y: headY };
+
+  if(invincible){
+    // while invincible, prevent death — clamp if out of bounds and ignore self-collision
+    clampHead(newHead);
+  } else {
+    // normal collision handling
+    if(headX < 0 || headX >= canvas.width || headY < 0 || headY >= canvas.height){
+      // death
+      stopStepLoop();
+      showGameOverOverlay();
+      return;
+    }
+    if(collisionWithSelf(newHead)){
+      stopStepLoop();
+      showGameOverOverlay();
+      return;
+    }
+  }
+
+  // eat?
+  if(newHead.x === food.x && newHead.y === food.y){
+    score += 1;
+    awardCoinsFromScore();
+    updateScoreUI();
+    try{ playEatSound(); } catch(e){}
+    eatAnim.active = true;
+    eatAnim.x = food.x;
+    eatAnim.y = food.y;
+    eatAnim.start = performance.now();
+    food = placeFood();
+  } else {
+    snake.pop();
+  }
+
+  snake.unshift(newHead);
+  adjustSpeed();
+}
+
+/* start/stop loop */
+function startGame(){ stopStepLoop(); stepTimer = setInterval(stepLoop, stepIntervalMs); startRender(); }
+function stopStepLoop(){ if(stepTimer){ clearInterval(stepTimer); stepTimer = null; } }
+
+/* ---------- UI updates ---------- */
+function updateScoreUI(){ scoreEl.textContent = score; updateBuyButton(); }
+function updateCoinsUI(){ coinsEl.textContent = coins; updateBuyButton(); }
+function updateCreditsUI(){ creditsEl.textContent = credits; updateBuyButton(); }
+function updateTopScoresPreview(){ const arr = getTopScores().slice(0,3); topScoresPreview.textContent = arr.length ? arr.join(',') : '-'; }
+function updateTopScoresBox(){ const arr = getTopScores(); if(arr.length === 0){ topScoresBox.innerHTML = '<div style="color:var(--muted)">No scores yet</div>'; return; } topScoresBox.innerHTML = arr.map((s,i) => `<div>${i+1}. ${s}</div>`).join(''); }
+
+function updateDailyUI(){
+  if(isDailyClaimedToday()){
+    dailyInfo.textContent = `Claimed today — streak: ${dailyStreak}. Bonus: ${dailyBonusAmount()} credits`;
+    dailyNotice.style.display = 'none';
+  } else {
+    let projectedStreak = 1;
+    if(dailyLast){
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const yiso = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+      if(dailyLast === yiso) projectedStreak = (dailyStreak || 0) + 1;
+      else projectedStreak = 1;
+    }
+    const projectedAmount = 1 + Math.min(projectedStreak, 4);
+    dailyInfo.textContent = `Streak: ${dailyStreak || 0}. Auto-claim will give ${projectedAmount} credits on open.`;
+  }
+}
+
+function updateAllUI(){
+  updateScoreUI(); updateCoinsUI(); updateCreditsUI(); updateTopScoresPreview(); updateTopScoresBox(); updateDailyUI(); updateBuyButton();
+}
+
+/* ---------- Store & Purchase actions ---------- */
+buyCoinWithCreditBtn.addEventListener('click', () => {
+  if(credits >= CREDIT_COST_PER_COIN){
+    credits -= CREDIT_COST_PER_COIN;
+    coins += 1;
+    saveCredits();
+    saveCoins();
+    updateCreditsUI();
+    updateCoinsUI();
+    const btn = buyCoinWithCreditBtn;
+    btn.textContent = 'Purchased!';
+    btn.disabled = true;
+    setTimeout(()=>{ btn.textContent = `Buy 1 Coin (cost: ${CREDIT_COST_PER_COIN} credit)`; updateBuyButton(); }, 800);
+  }
+});
+
+buyCoinWithScoreBtn.addEventListener('click', () => {
+  if(score >= COIN_SCORE_COST){
+    score -= COIN_SCORE_COST;
+    coins += 1;
+    saveCoins();
+    updateScoreUI();
+    updateCoinsUI();
+    const btn = buyCoinWithScoreBtn;
+    btn.textContent = 'Purchased!';
+    btn.disabled = true;
+    setTimeout(()=>{ btn.textContent = `Buy 1 Coin (cost: ${COIN_SCORE_COST} score)`; updateBuyButton(); }, 800);
+  }
+});
+
+claimCreditsBtn.addEventListener('click', () => {
+  const top = getTopScores()[0] || 0;
+  const available = Math.floor(top / CREDIT_MILESTONE);
+  const highestClaimed = claimedMilestones.length ? Math.max(...claimedMilestones) : 0;
+  const toClaim = Math.max(0, available - highestClaimed);
+  if(toClaim <= 0){
+    const btn = claimCreditsBtn;
+    btn.textContent = 'Nothing to claim';
+    btn.disabled = true;
+    setTimeout(()=>{ updateBuyButton(); }, 900);
+    return;
+  }
+  credits += toClaim;
+  claimedMilestones.push(available);
+  saveCredits(); saveClaimed();
+  updateCreditsUI();
+  const btn = claimCreditsBtn;
+  btn.textContent = `Claimed ${toClaim} credit(s)!`;
+  btn.disabled = true;
+  setTimeout(()=>{ btn.textContent = `Claim Credits from Top Score (1 credit per ${CREDIT_MILESTONE} points)`; updateBuyButton(); }, 900);
+});
+
+closeStoreBtn.addEventListener('click', ()=>{ storeOverlay.style.display='none'; updateBuyButton(); });
+storeBtn.addEventListener('click', ()=>{ storeOverlay.style.display='flex'; updateBuyButton(); });
+openStoreFromMenuBtn.addEventListener('click', ()=>{ storeOverlay.style.display='flex'; startOverlay.style.display='none'; updateBuyButton(); });
+
+/* ---------- Use coin to continue (Game Over) with invincibility ---------- */
+useCoinContinueBtn.addEventListener('click', () => {
+  if(coins <= 0) return;
+  coins -= 1; saveCoins(); updateCoinsUI();
+  overOverlay.style.display = 'none';
+  if(prevSnakeState) snake = copySnake(prevSnakeState);
+  prevSnakeState = null;
+
+  // Activate invincibility
+  invincible = true;
+  invStart = performance.now();
+
+  // Restart loop
+  stopStepLoop(); // clear any existing
+  stepTimer = setInterval(stepLoop, stepIntervalMs);
+});
+
+/* ---------- Game over overlay ---------- */
+function showGameOverOverlay(){
+  finalScoreEl.textContent = score;
+  const topArr = getTopScores();
+  finalTopEl.textContent = topArr[0] || 0;
+  useCoinContinueBtn.disabled = (coins <= 0);
+  overOverlay.style.display = 'flex';
+  updateBuyButton();
+  finalizeTopScores();
+}
+
+function finalizeTopScores(){
+  const arr = getTopScores();
+  arr.push(score);
+  arr.sort((a,b)=>b-a);
+  while(arr.length > STORAGE_TOP_N) arr.pop();
+  saveTopScores(arr);
+  updateTopScoresBox();
+  updateTopScoresPreview();
+}
+
+/* ---------- Buy button enabling logic ---------- */
+function updateBuyButton(){
+  const startVisible = (startOverlay.style.display !== 'none' && startOverlay.style.display !== '');
+  const overVisible = (overOverlay.style.display !== 'none' && overOverlay.style.display !== '');
+  document.getElementById('buyCoinWithScoreBtn').disabled = startVisible || overVisible || (score < COIN_SCORE_COST);
+  document.getElementById('buyCoinWithCreditBtn').disabled = (credits < CREDIT_COST_PER_COIN);
+  const top = getTopScores()[0] || 0;
+  const available = Math.floor(top / CREDIT_MILESTONE);
+  const highestClaimed = claimedMilestones.length ? Math.max(...claimedMilestones) : 0;
+  claimCreditsBtn.disabled = (available <= highestClaimed);
+}
+
+/* ---------- Controls (keyboard & touch) ---------- */
+document.addEventListener('keydown', (e) => {
+  const k = e.key;
+  if(['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'].includes(k)) e.preventDefault();
+  if((k === 'ArrowLeft' || k === 'a') && dir !== 'RIGHT') dir = 'LEFT';
+  else if((k === 'ArrowUp' || k === 'w') && dir !== 'DOWN') dir = 'UP';
+  else if((k === 'ArrowRight' || k === 'd') && dir !== 'LEFT') dir = 'RIGHT';
+  else if((k === 'ArrowDown' || k === 's') && dir !== 'UP') dir = 'DOWN';
+});
+
+let touchStartX=0, touchStartY=0, touchEndX=0, touchEndY=0;
+canvas.addEventListener('touchstart', (ev)=>{ if(ev.touches && ev.touches.length>0){ touchStartX = ev.touches[0].clientX; touchStartY = ev.touches[0].clientY; } }, {passive:true});
+canvas.addEventListener('touchmove', (ev)=>{ if(ev.cancelable) ev.preventDefault(); if(ev.touches && ev.touches.length>0){ touchEndX = ev.touches[0].clientX; touchEndY = ev.touches[0].clientY; } }, {passive:false});
+canvas.addEventListener('touchend', (ev)=>{ const dx = (touchEndX || touchStartX) - touchStartX; const dy = (touchEndY || touchStartY) - touchStartY; if(Math.abs(dx) > Math.abs(dy)){ if(dx > 30 && dir !== 'LEFT') dir = 'RIGHT'; else if(dx < -30 && dir !== 'RIGHT') dir = 'LEFT'; } else { if(dy > 30 && dir !== 'UP') dir = 'DOWN'; else if(dy < -30 && dir !== 'DOWN') dir = 'UP'; } touchStartX=touchStartY=touchEndX=touchEndY=0; }, {passive:true});
+
+/* ---------- Start/initial render & game start ---------- */
+playBtn.addEventListener('click', () => {
+  ensureAudio();
+  startOverlay.style.display = 'none';
+  initGame();
+  startRender();
+  // small delay to avoid immediate movement
+  setTimeout(()=>{ startGame(); }, 120);
+});
+
+againBtn.addEventListener('click', () => { overOverlay.style.display = 'none'; initGame(); startRender(); setTimeout(()=>{ startGame(); },120); });
+menuBtn.addEventListener('click', () => { overOverlay.style.display = 'none'; startOverlay.style.display = 'flex'; updateTopScoresBox(); updateTopScoresPreview(); updateBuyButton(); });
+
+/* ---------- Init on load ---------- */
+function startup(){
+  updateAllUI();
+
+  const amount = autoClaimDailyIfNeeded();
+  if(amount > 0){
+    dailyNotice.style.display = 'block';
+    dailyNotice.textContent = `Daily bonus +${amount} credits auto-claimed — streak: ${dailyStreak}.`;
+    updateCreditsUI();
+    updateDailyUI();
+    setTimeout(()=>{ dailyNotice.style.display = 'none'; }, 3000);
+  } else {
+    updateDailyUI();
+  }
+
+  // initial preview
+  initGame();
+  render();
+
+  // unlock audio on first user click to satisfy browser policies
+  document.addEventListener('click', function unlock(){ ensureAudio(); if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{}); document.removeEventListener('click', unlock); }, {passive:true});
+}
+startup();
+
+/* ---------- Persist on unload ---------- */
+window.addEventListener('beforeunload', ()=>{ saveCoins(); saveCredits(); saveClaimed(); saveDailyState(); });
+
+</script>
 </body>
 </html>
